@@ -1,0 +1,106 @@
+获取数据
+WITH iddd as(
+SELECT DISTINCT patientunitstayid
+FROM treatment
+WHERE treatmentstring like 'pulmonary|ventilation and oxygenation%'),
+idddd as(
+SELECT DISTINCT patientunitstayid
+FROM apache4
+WHERE actualiculos>=1),
+iddddd as(
+SELECT DISTINCT patientunitstayid,diagnosisoffset
+FROM "diagnosis"
+WHERE diagnosisstring like 'pulmonary|respiratory failure|acute lung injury%' OR diagnosisstring like 'pulmonary|respiratory failure|acute respiratory distress%' OR diagnosisstring like 'pulmonary|respiratory failure|ARDS%'),
+idddddd as(
+SELECT DISTINCT patientunitstayid
+FROM icustay_detail
+WHERE unitvisitnumber=1),
+iddddddd as(
+SELECT DISTINCT patientunitstayid,CASE WHEN age is null THEN 92 ELSE age end as age
+FROM apachepredvar
+WHERE age is null OR age >=16)
+SELECT DISTINCT iddd.patientunitstayid,pivoted_vital.chartoffset,pivoted_vital.spo2,apache4.actualhospitallos,
+CASE WHEN apache4.actualicumortality LIKE 'EXPIRED' THEN 1 ELSE 0 END AS actualicumortality,
+CASE WHEN apache4.actualhospitalmortality LIKE 'EXPIRED' THEN 1 ELSE 0 END AS actualhospitalmortality,apache4.actualiculos,apache4.apache4score,iddddddd.age
+FROM pivoted_vital,iddd ,idddd,iddddd,apache4,idddddd,iddddddd
+WHERE iddd.patientunitstayid=pivoted_vital.patientunitstayid AND pivoted_vital.spo2 is not null AND iddd.patientunitstayid=apache4.patientunitstayid AND idddd.patientunitstayid=iddd.patientunitstayid AND iddddd.patientunitstayid=iddd.patientunitstayid AND iddddd.diagnosisoffset<=pivoted_vital.chartoffset AND idddddd.patientunitstayid=iddd.patientunitstayid AND iddd.patientunitstayid=iddddddd.patientunitstayid
+ORDER BY iddd.patientunitstayid,pivoted_vital.chartoffset
+
+测量次数小于10次
+WITH idd as(
+SELECT patientunitstayid,count(spo2) AS num
+FROM "ardsspo2"
+GROUP BY patientunitstayid),iddd as(
+SELECT patientunitstayid 
+FROM idd
+WHERE num>=10)
+SELECT ardsspo2.*
+FROM iddd,ardsspo2
+WHERE iddd.patientunitstayid=ardsspo2.patientunitstayid
+ORDER BY iddd.patientunitstayid
+
+导出csv，计算chartoffse
+
+获取spo2时间占比 pqsql
+WITH idd as(
+SELECT patientunitstayid,spo2,CASE WHEN spo2<96 THEN timme ELSE null END as sp96,
+CASE WHEN spo2>98 THEN timme ELSE null end as sp98,
+CASE WHEN spo2>=96 AND spo2 <= 98 THEN timme ELSE null end as sp9698
+FROM "ardsspo2-1"),
+iddd as(
+SELECT patientunitstayid,sum(sp96) as sp96 ,sum(sp9698) as sp9698,sum(sp98) as sp98
+FROM idd
+GROUP BY patientunitstayid)
+,idddd AS(
+SELECT patientunitstayid,CASE WHEN sp96 is null THEN 0 ELSE sp96 END AS sp96,CASE WHEN sp9698 is null THEN 0 ELSE sp9698 END AS sp9698,CASE WHEN sp98 is null THEN 0 ELSE sp98 END AS sp98
+FROM iddd)
+SELECT DISTINCT "ardsspo2-1".patientunitstayid,round(sp96::numeric/(sp96+sp9698+sp98)::numeric,2) as sp96,round(sp9698::numeric/(sp96+sp9698+sp98)::numeric,2) as sp9698,round(sp98::numeric/(sp96+sp9698+sp98)::numeric,2) as sp98,"ardsspo2-1".actualhospitalmortality,"ardsspo2-1".apache4score
+FROM idddd,"ardsspo2-1"
+WHERE idddd.patientunitstayid="ardsspo2-1".patientunitstayid 
+ORDER BY "ardsspo2-1".patientunitstayid
+
+添加并发症
+WITH idd as(
+SELECT DISTINCT patientunitstayid,1 AS capp
+FROM "diagnosis"
+WHERE diagnosisstring like 'pulmonary|pulmonary infections|pneumonia|hospital acquired%' 
+ORDER BY patientunitstayid ),iddd as(
+SELECT "ardsspo2-5".*,capp
+FROM "ardsspo2-5"
+LEFT JOIN idd
+ON "ardsspo2-5".patientunitstayid=idd.patientunitstayid)
+SELECT *,CASE WHEN capp=1 then 1 ELSE 0 END as cap
+FROM iddd
+ORDER BY patientunitstayid
+
+添加冠心病
+WITH id1 as(
+SELECT DISTINCT patientunitstayid,CASE WHEN diagnosisstring LIKE 'cardiovascular|chest pain / ASHD|acute coronary syndrome%' THEN diagnosisoffset ELSE NULL END AS acstime,CASE WHEN (diagnosisstring LIKE 'pulmonary|respiratory failure|acute lung injury%' OR diagnosisstring like 'pulmonary|respiratory failure|acute respiratory distress%' OR diagnosisstring like 'pulmonary|respiratory failure|ARDS%') THEN  diagnosisoffset ELSE NULL END AS ardstime
+FROM "diagnosis"
+ORDER BY patientunitstayid),id2 as(
+SELECT DISTINCT patientunitstayid,min(ardstime) AS ardstime,max(acstime) as acstime
+FROM id1
+GROUP BY patientunitstayid),idd as(
+SELECT DISTINCT patientunitstayid,1 AS acss
+FROM id2
+WHERE acstime> ardstime),iddd as(
+SELECT "ardsspo2-6".*,acss
+FROM "ardsspo2-6"
+LEFT JOIN idd
+ON "ardsspo2-6".patientunitstayid=idd.patientunitstayid)
+SELECT *,CASE WHEN acss=1 then 1 ELSE 0 END as acs
+FROM iddd
+ORDER BY patientunitstayid
+
+添加亚组分析
+WITH idd as(
+SELECT DISTINCT patientunitstayid,CASE WHEN treatmentstring like 'pulmonary|ventilation and oxygenation|oxygen therapy%' then 1 WHEN treatmentstring like 'pulmonary|ventilation and oxygenation|non-invasive ventilation%' THEN 2 ELSE 3 END AS o2method 
+FROM "treatment"),iddd as(
+SELECT patientunitstayid,max(o2method) as o2method
+FROM idd
+GROUP BY patientunitstayid)
+SELECT "ardsspo2-8".*,o2method
+FROM "ardsspo2-8"
+LEFT JOIN iddd
+ON"ardsspo2-8".patientunitstayid=iddd.patientunitstayid
+ORDER BY "ardsspo2-8".patientunitstayid
