@@ -1,0 +1,34 @@
+#计算SPO2中位数并输出icustay_id和中位数到media.csv文件。
+library(doBy)
+yy <- summaryBy(spo2 ~ patientunitstayid , data = ards, FUN = list(median))
+write.csv(yy,"media.csv")
+
+
+> library(doBy)
+> library(nlme)
+> library(mgcv)
+>gam1 <-  gam(actualhospitalmortality~s(spo2.median),fammily=binomial,method="REML",data=ards)
+>plot(gam1,xlim = c(88,100),ylim = c(0,0.4),xlab="Median oxygen saturation (SpO2)" ,ylab="Probability of hospital mortality", lwd = 2,xaxt="n")
+>axis(1,at=seq(88,100,2))
+
+#tableone制作
+# 加载包
+library(tableone)
+
+# 输出据集变量名称
+dput(names(a)) 
+
+## 需要统计输出的变量
+> myVars <- c("actualhospitalmortality", "apache4score",  "actualhospitallos", "actualicumortality", "actualiculos", "age", "spo2.median",   "pf", "pfscore", "o2method", "happ",  "vapp", "hvapp", "sex","urine", "wbc",   "temperature", "respiratoryrate", "sodium", "heartrate", "meanbp",   "ph", "creatinine", "albumin", "pco2", "bun", "glucose", "bilirubin", "GCS", "aids", "hepaticfailure", "lymphoma", "metastaticcancer","leukemia", "immunosuppression", "cirrhosis", "diabetes", "creatinine1",  "hemoglobin_min", "ptt_min", "platelet_min", "lactate_max", "pt_max",  "ptt_max", "inr_max", "potassium_max", "sodium_min")
+
+## 设定需要转为分类变量的变量
+ > catVars <- c("actualhospitalmortality",  "actualicumortality", "pfscore", "o2method", "happ", "vapp", "hvapp", "sex", "aids", "hepaticfailure", "lymphoma", "metastaticcancer","leukemia", "immunosuppression", "cirrhosis", "diabetes")
+
+##定义检验方法
+>  tab4 <- CreateTableOne(vars = myVars, strata = "actualhospitalmortality" , data = a, factorVars = catVars,addOverall = TRUE )
+
+#导出结果
+> tab4Mat <- print(tab4, nonnormal = TRUE, quote = FALSE, noSpaces = TRUE, printToggle = FALSE, showAllLevels = TRUE)#可加需fish的exact = "stage"
+
+#导出结果csv
+write.csv(tab4Mat, file = "myTable.csv")
